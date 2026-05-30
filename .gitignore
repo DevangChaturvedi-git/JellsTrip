@@ -1,0 +1,7 @@
+*.env
+.env
+*.password
+*secret*
+docker-compose.override.yml
+invidious-config/config.yml
+piped-config/config.properties
