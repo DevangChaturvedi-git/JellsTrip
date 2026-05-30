@@ -1,0 +1,246 @@
+services:
+  # ─────────────────────────────────────────────────
+  # ── STACK B: PIPED BACKEND (WORKING YOUTUBE) ─────
+  # ─────────────────────────────────────────────────
+  postgres-piped:
+    image: postgres:15-alpine
+    container_name: postgres-piped
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: piped
+      POSTGRES_PASSWORD: PipedPass123
+      POSTGRES_DB: piped
+    volumes:
+      - ./data/piped_db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U piped -d piped"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  piped-backend:
+    image: 1337kavin/piped:latest
+    container_name: piped-backend
+    restart: unless-stopped
+    ports:
+      - "8081:8080"
+    volumes:
+      - ./piped-config/config.properties:/app/config.properties:ro
+    depends_on:
+      postgres-piped:
+        condition: service_healthy
+
+  piped-frontend:
+    image: 1337kavin/piped-frontend:latest
+    container_name: piped-frontend
+    restart: unless-stopped
+    ports:
+      - "3001:80"
+    environment:
+      BACKEND_HOSTNAME: "http://192.168.1.90:8081"
+    depends_on:
+      piped-backend:
+        condition: service_healthy
+
+  # ─────────────────────────────────────────────────
+  # ── STACK C: ENTERTAINMENT (JELLYFIN & NAVIDROME) ─
+  # ─────────────────────────────────────────────────
+  jellyfin:
+    image: jellyfin/jellyfin:latest
+    container_name: jellyfin
+    restart: unless-stopped
+    ports:
+      - "8096:8096"
+    volumes:
+      - /mnt/data/config/jellyfin:/config
+      - /mnt/data/movies:/movies
+      - /mnt/data/shows:/shows
+
+  navidrome:
+    image: deluan/navidrome:latest
+    container_name: navidrome
+    restart: unless-stopped
+    ports:
+      - "4533:4533"
+    environment:
+      - ND_DATADIR=/data
+      - ND_SCANSCHEDULE=@every 5m
+      - ND_LOGLEVEL=info
+      - ND_SCANNER_PURGEMISSING=always
+      - ND_BASEURL=
+    volumes:
+      - /mnt/data/config/navidrome:/data
+      - /mnt/data/music/Sorted:/music
+
+  navidrome-grandpa:
+    image: deluan/navidrome:latest
+    container_name: navidrome-grandpa
+    restart: unless-stopped
+    ports:
+      - "4534:4533"
+    environment:
+      - ND_DATADIR=/data
+      - ND_SCANSCHEDULE=@every 5m
+      - ND_LOGLEVEL=info
+      - ND_SCANNER_PURGEMISSING=always
+      - ND_BASEURL=
+    volumes:
+      - /mnt/data/config/navidrome-grandpa:/data
+      - /mnt/data/music/GrandpaMusic:/music
+
+  music-downloader:
+    image: binhex/arch-nicotineplus:latest
+    container_name: nicotine-plus
+    restart: unless-stopped
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Asia/Kolkata
+    volumes:
+      - /mnt/data/config/nicotine:/config
+      - /mnt/data/music:/downloads
+    ports:
+      - "6080:6080"
+      - "2234:2234"
+
+  # ─────────────────────────────────────────────────
+  # ── STACK D: PRIVATE CLOUD ────
+
+  # ─────────────────────────────────────────────────
+  samba:
+    image: dperson/samba:latest
+    container_name: samba
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      USER: homestack;SecureCloudPass123!
+      SHARE: HomeCloud;/data;yes;no;no;homestack
+      GLOBAL: "min protocol = SMB2\ndfree command = /usr/bin/df /data"
+    volumes:
+      - /mnt/data/samba:/etc/samba  # Make sure this points to your config folder
+      - /mnt/data:/data
+  # ─────────────────────────────────────────────────
+  # ── STACK E: PHOTOS (IMMICH ECOSYSTEM) ───────────
+  # ─────────────────────────────────────────────────
+  immich-db:
+    image: postgres:15-alpine
+    container_name: immich-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: immich
+      POSTGRES_PASSWORD: ImmichStoragePass123!
+      POSTGRES_DB: immich
+    volumes:
+      - ./immich-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U immich -d immich"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  immich-machine-learning:
+    image: ghcr.io/immich-app/immich-machine-learning:release
+    container_name: immich-ml
+    restart: unless-stopped
+    volumes:
+      - ./immich-ts:/cache
+
+  immich-server:
+    image: ghcr.io/immich-app/immich-server:release
+    container_name: immich-server
+    restart: unless-stopped
+    ports:
+      - "8083:3001"
+    volumes:
+      - ./media/photos:/usr/src/app/upload
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      - DB_HOSTNAME=immich-db
+      - DB_USERNAME=immich
+      - DB_PASSWORD=ImmichStoragePass123!
+      - DB_DATABASE_NAME=immich
+      - IMMICH_MACHINE_LEARNING_URL=http://immich-machine-learning:3001
+    depends_on:
+      immich-db:
+        condition: service_healthy
+
+  tailscale-audio:
+    image: tailscale/tailscale:latest
+    container_name: tailscale-audio
+    restart: unless-stopped
+    volumes:
+      - /var/lib/tailscale:/var/lib/tailscale
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    environment:
+      - TS_AUTHKEY=tskey-auth-kcvbXDCHV821CNTRL-jTCe1rWVmpCFbPWNH4d7qC4CnHhH1ckb
+      - TS_STATE_DIR=/var/lib/tailscale
+
+  unbound-dns:
+    image: mvance/unbound:latest
+    container_name: unbound-dns
+    restart: unless-stopped
+    ports:
+      - "5335:53/udp"
+      - "5335:53/tcp"
+    volumes:
+      - /opt/homestack/unbound:/opt/unbound/etc/unbound
+    cap_add:
+      - NET_ADMIN
+
+  beets:
+    image: lscr.io/linuxserver/beets:latest
+    container_name: beets
+    restart: unless-stopped
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Asia/Kolkata
+      # These 2 lines force the container to install the plugin code on every boot
+      - DOCKER_MODS=linuxserver/mods:universal-package-install
+      - INSTALL_PIP_PACKAGES=beets[lyrics,chroma,fetchart,embedart] pyacoustid requests beautifulsoup4
+    volumes:
+      - /mnt/data/config/beets:/config  # Links File 2 into the container
+      - /mnt/data/music:/music          # Gives Beets access to your music files
+
+  slskd:
+    image: slskd/slskd:latest
+    container_name: slskd
+    ports:
+      - "5030:5030"
+    environment:
+      - SLSKD_HTTP_AUTH_METHOD=username-password
+      - SLSKD_HTTP_USERNAME=admin
+      - SLSKD_HTTP_PASSWORD=YourSecurePassword
+      - SLSKD_SLSK_USERNAME=MyHomeLabUser2026
+      - SLSKD_SLSK_PASSWORD=YourChosenPassword123
+      - SLSKD_REMOTE_CONFIGURATION=true
+      - SLSKD_API_KEY=MySecretSlskdKey123!
+      - SLSKD_INTEGRATIONS_SCRIPTS_TRIGGER_BEETS_RUN_ARGS=-c "docker exec -i beets beet -c /config/config.yaml import -q \"$$SLSKD_SCRIPT_DATA\""
+    volumes:
+      - /mnt/data/config/slskd:/app/config
+      - /mnt/data/music/downloads:/downloads
+    restart: unless-stopped
+
+  slskd-bot:
+    image: drumsergio/telegram-slskd-local-bot:latest
+    container_name: slskd-bot
+    environment:
+      - DOWNLOAD_DIR=/downloads
+      - OUTPUT_DIR=/music
+      - SLSKD_API_KEY=MySecretSlskdKey123!
+      - SLSKD_HOST=http://slskd:5030
+      - SPOTIFY_CLIENT_ID=1234567890abcdef1234567890abcdef
+      - SPOTIFY_CLIENT_SECRET=1234567890abcdef1234567890abcdef
+      - TELEGRAM_ALLOWED_USERS=1283887029
+      - TELEGRAM_BOT_TOKEN=8599366105:AAHauj4SfUQCwIVKkveE6qYaGMuqE59ZDqU
+    volumes:
+      - /mnt/data/music/downloads:/downloads
+      - /mnt/data/music/Sorted:/music
+      - /mnt/data/config/slskd-bot:/data
+    depends_on:
+      - slskd
+    restart: unless-stopped
