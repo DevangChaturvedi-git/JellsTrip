@@ -1,14 +1,11 @@
 services:
-  # ─────────────────────────────────────────────────
-  # ── STACK B: PIPED BACKEND (WORKING YOUTUBE) ─────
-  # ─────────────────────────────────────────────────
   postgres-piped:
     image: postgres:15-alpine
     container_name: postgres-piped
     restart: unless-stopped
     environment:
       POSTGRES_USER: piped
-      POSTGRES_PASSWORD: PipedPass123
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD_PIPED}
       POSTGRES_DB: piped
     volumes:
       - ./data/piped_db:/var/lib/postgresql/data
@@ -43,9 +40,6 @@ services:
       piped-backend:
         condition: service_healthy
 
-  # ─────────────────────────────────────────────────
-  # ── STACK C: ENTERTAINMENT (JELLYFIN & NAVIDROME) ─
-  # ─────────────────────────────────────────────────
   jellyfin:
     image: jellyfin/jellyfin:latest
     container_name: jellyfin
@@ -104,32 +98,26 @@ services:
       - "6080:6080"
       - "2234:2234"
 
-  # ─────────────────────────────────────────────────
-  # ── STACK D: PRIVATE CLOUD ────
-
-  # ─────────────────────────────────────────────────
   samba:
     image: dperson/samba:latest
     container_name: samba
     restart: unless-stopped
     network_mode: host
     environment:
-      USER: homestack;SecureCloudPass123!
+      USER: homestack;${SAMBA_PASS}
       SHARE: HomeCloud;/data;yes;no;no;homestack
       GLOBAL: "min protocol = SMB2\ndfree command = /usr/bin/df /data"
     volumes:
-      - /mnt/data/samba:/etc/samba  # Make sure this points to your config folder
+      - /mnt/data/samba:/etc/samba
       - /mnt/data:/data
-  # ─────────────────────────────────────────────────
-  # ── STACK E: PHOTOS (IMMICH ECOSYSTEM) ───────────
-  # ─────────────────────────────────────────────────
+
   immich-db:
     image: postgres:15-alpine
     container_name: immich-db
     restart: unless-stopped
     environment:
       POSTGRES_USER: immich
-      POSTGRES_PASSWORD: ImmichStoragePass123!
+      POSTGRES_PASSWORD: ${IMMICH_DB_PASSWORD}
       POSTGRES_DB: immich
     volumes:
       - ./immich-db:/var/lib/postgresql/data
@@ -158,7 +146,7 @@ services:
     environment:
       - DB_HOSTNAME=immich-db
       - DB_USERNAME=immich
-      - DB_PASSWORD=ImmichStoragePass123!
+      - DB_PASSWORD=${IMMICH_DB_PASSWORD}
       - DB_DATABASE_NAME=immich
       - IMMICH_MACHINE_LEARNING_URL=http://immich-machine-learning:3001
     depends_on:
@@ -176,7 +164,7 @@ services:
       - NET_ADMIN
       - SYS_MODULE
     environment:
-      - TS_AUTHKEY=tskey-auth-kcvbXDCHV821CNTRL-jTCe1rWVmpCFbPWNH4d7qC4CnHhH1ckb
+      - TS_AUTHKEY=${TS_AUTHKEY}
       - TS_STATE_DIR=/var/lib/tailscale
 
   unbound-dns:
@@ -199,48 +187,46 @@ services:
       - PUID=1000
       - PGID=1000
       - TZ=Asia/Kolkata
-      # These 2 lines force the container to install the plugin code on every boot
       - DOCKER_MODS=linuxserver/mods:universal-package-install
       - INSTALL_PIP_PACKAGES=beets[lyrics,chroma,fetchart,embedart] pyacoustid requests beautifulsoup4
     volumes:
-      - /mnt/data/config/beets:/config  # Links File 2 into the container
-      - /mnt/data/music:/music          # Gives Beets access to your music files
+      - /mnt/data/config/beets:/config
+      - /mnt/data/music:/music
 
   slskd:
     image: slskd/slskd:latest
     container_name: slskd
+    restart: unless-stopped
     ports:
       - "5030:5030"
     environment:
       - SLSKD_HTTP_AUTH_METHOD=username-password
       - SLSKD_HTTP_USERNAME=admin
-      - SLSKD_HTTP_PASSWORD=YourSecurePassword
+      - SLSKD_HTTP_PASSWORD=${SLSKD_HTTP_PASSWORD}
       - SLSKD_SLSK_USERNAME=MyHomeLabUser2026
-      - SLSKD_SLSK_PASSWORD=YourChosenPassword123
+      - SLSKD_SLSK_PASSWORD=${SLSKD_SLSK_PASSWORD}
       - SLSKD_REMOTE_CONFIGURATION=true
-      - SLSKD_API_KEY=MySecretSlskdKey123!
-      - SLSKD_INTEGRATIONS_SCRIPTS_TRIGGER_BEETS_RUN_ARGS=-c "docker exec -i beets beet -c /config/config.yaml import -q \"$$SLSKD_SCRIPT_DATA\""
+      - SLSKD_API_KEY=${SLSKD_API_KEY}
     volumes:
       - /mnt/data/config/slskd:/app/config
       - /mnt/data/music/downloads:/downloads
-    restart: unless-stopped
 
   slskd-bot:
     image: drumsergio/telegram-slskd-local-bot:latest
     container_name: slskd-bot
+    restart: unless-stopped
     environment:
       - DOWNLOAD_DIR=/downloads
       - OUTPUT_DIR=/music
-      - SLSKD_API_KEY=MySecretSlskdKey123!
+      - SLSKD_API_KEY=${SLSKD_API_KEY}
       - SLSKD_HOST=http://slskd:5030
-      - SPOTIFY_CLIENT_ID=1234567890abcdef1234567890abcdef
-      - SPOTIFY_CLIENT_SECRET=1234567890abcdef1234567890abcdef
-      - TELEGRAM_ALLOWED_USERS=1283887029
-      - TELEGRAM_BOT_TOKEN=8599366105:AAHauj4SfUQCwIVKkveE6qYaGMuqE59ZDqU
+      - SPOTIFY_CLIENT_ID=${SPOTIFY_CLIENT_ID}
+      - SPOTIFY_CLIENT_SECRET=${SPOTIFY_CLIENT_SECRET}
+      - TELEGRAM_ALLOWED_USERS=${TELEGRAM_ALLOWED_USERS}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
     volumes:
       - /mnt/data/music/downloads:/downloads
       - /mnt/data/music/Sorted:/music
       - /mnt/data/config/slskd-bot:/data
     depends_on:
       - slskd
-    restart: unless-stopped
