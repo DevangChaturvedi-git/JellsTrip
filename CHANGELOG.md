@@ -40,3 +40,34 @@
 - Invidious video route 500 errors
 - slskd-bot Telegram conflict cleanup
 - Gigabit switch procurement
+
+## v2.0 — Infrastructure Refresh (Sept 2026)
+
+### Infrastructure
+- Corrected container layout: CT100 = PiHole (not AdGuard Home), CT101 = Docker workload (58+ containers), CT102 = print-server (currently stopped)
+- Full re-audit of running services against live `docker ps -a` output
+
+### AI Orchestration (new)
+- Deployed Peanut: self-hosted personal AI orchestrator (deterministic agent routing, model routing, policy/approval engine, MCP-based tool execution)
+- Deployed OmniRoute as a multi-provider LLM gateway/router (400+ models via Gemini, OpenRouter, OpenCode)
+- Deployed Open WebUI and LibreChat as chat frontends to Peanut
+- Deployed Morphic as an AI-answer search frontend over SearXNG
+- Deployed 9 MCP servers (homelab, workspace, memory, Jellyfin, SearXNG, Navidrome, arr-stack, Jellyseerr, slskd) plus a GitHub MCP server and a scoped docker-socket-proxy
+
+### YouTube Alternative Stack
+- Retired Piped backend/frontend
+- Invidious + Companion + Materialious is now the primary YouTube-alternative stack
+
+### Networking & Security
+- Corrected DNS documentation: PiHole (CT100) handles network-wide ad-blocking, not AdGuard Home
+- Added Vaultwarden (self-hosted Bitwarden-compatible password manager)
+- Added wg-easy (WireGuard VPN with web UI) alongside Tailscale
+- Added Portainer for Docker management
+
+### Communication
+- Added Matrix Synapse + mautrix-whatsapp bridge
+- Added self-hosted Firefox Sync
+
+### Known Issues
+- dab-downloader currently restart-looping, not yet root-caused
+- Print server (CT102) currently stopped

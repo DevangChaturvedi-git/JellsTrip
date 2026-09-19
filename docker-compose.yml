@@ -1,44 +1,61 @@
 services:
-  postgres-piped:
-    image: postgres:15-alpine
-    container_name: postgres-piped
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: piped
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD_PIPED}
-      POSTGRES_DB: piped
+  immich-server:
+    container_name: immich_server
+    image: ghcr.io/immich-app/immich-server:${IMMICH_VERSION:-release}
     volumes:
-      - ./data/piped_db:/var/lib/postgresql/data
+      - ${UPLOAD_LOCATION}:/usr/src/app/upload
+      - /etc/localtime:/etc/localtime:ro
+    env_file:
+      - .env
+    ports:
+      - '${IMMICH_APP_PORT:-2283}:2283'
+    depends_on:
+      - redis
+      - database
+    restart: always
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U piped -d piped"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 20s
+      disable: false
+    networks:
+      - homestack-net
 
-  piped-backend:
-    image: 1337kavin/piped:latest
-    container_name: piped-backend
-    restart: unless-stopped
-    ports:
-      - "8081:8080"
+  immich-machine-learning:
+    container_name: immich_machine_learning
+    image: ghcr.io/immich-app/immich-machine-learning:${IMMICH_VERSION:-release}
     volumes:
-      - ./piped-config/config.properties:/app/config.properties:ro
-    depends_on:
-      postgres-piped:
-        condition: service_healthy
+      - model-cache:/cache
+    env_file:
+      - .env
+    restart: always
+    healthcheck:
+      disable: false
+    networks:
+      - homestack-net
 
-  piped-frontend:
-    image: 1337kavin/piped-frontend:latest
-    container_name: piped-frontend
-    restart: unless-stopped
-    ports:
-      - "3001:80"
+  redis:
+    container_name: immich_redis
+    image: docker.io/valkey/valkey:9@sha256:3b55fbaa0cd93cf0d9d961f405e4dfcc70efe325e2d84da207a0a8e6d8fde4f9
+    healthcheck:
+      test: redis-cli ping || exit 1
+    restart: always
+    networks:
+      - homestack-net
+
+  database:
+    container_name: immich_postgres
+    image: ghcr.io/immich-app/postgres:14-vectorchord0.4.3-pgvectors0.2.0@sha256:bcf63357191b76a916ae5eb93464d65c07511da41e3bf7a8416db519b40b1c23
     environment:
-      BACKEND_HOSTNAME: "http://192.168.1.90:8081"
-    depends_on:
-      piped-backend:
-        condition: service_healthy
+      POSTGRES_PASSWORD: CHANGEME
+      POSTGRES_USER: ${DB_USERNAME}
+      POSTGRES_DB: ${DB_DATABASE_NAME}
+      POSTGRES_INITDB_ARGS: '--data-checksums'
+    volumes:
+      - ${DB_DATA_LOCATION}:/var/lib/postgresql/data
+    shm_size: 128mb
+    restart: always
+    healthcheck:
+      disable: false
+    networks:
+      - homestack-net
 
   jellyfin:
     image: jellyfin/jellyfin:latest
@@ -57,31 +74,25 @@ services:
     restart: unless-stopped
     ports:
       - "4533:4533"
+    devices:
+      - /dev/snd:/dev/snd
+    group_add:
+      - audio
     environment:
+      - ND_JUKEBOX_ENABLED=false
+      - ND_MPVPATH=/usr/bin/mpv
+      - ND_JUKEBOX_ADMINONLY=false
+      - ND_JUKEBOX_DEVICES="internal"
       - ND_DATADIR=/data
-      - ND_SCANSCHEDULE=@every 5m
+      - ND_SCANSCHEDULE=@every 1m
       - ND_LOGLEVEL=info
       - ND_SCANNER_PURGEMISSING=always
-      - ND_BASEURL=
+      - ND_ENABLEFOLDERWATCHER=true
     volumes:
       - /mnt/data/config/navidrome:/data
-      - /mnt/data/music/Sorted:/music
-
-  navidrome-grandpa:
-    image: deluan/navidrome:latest
-    container_name: navidrome-grandpa
-    restart: unless-stopped
-    ports:
-      - "4534:4533"
-    environment:
-      - ND_DATADIR=/data
-      - ND_SCANSCHEDULE=@every 5m
-      - ND_LOGLEVEL=info
-      - ND_SCANNER_PURGEMISSING=always
-      - ND_BASEURL=
-    volumes:
-      - /mnt/data/config/navidrome-grandpa:/data
-      - /mnt/data/music/GrandpaMusic:/music
+      - /mnt/data/music:/music:ro
+    networks:
+      - homestack-net
 
   music-downloader:
     image: binhex/arch-nicotineplus:latest
@@ -98,6 +109,36 @@ services:
       - "6080:6080"
       - "2234:2234"
 
+  lidarr:
+    image: linuxserver/lidarr:latest
+    container_name: lidarr
+    restart: unless-stopped
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Asia/Kolkata
+    volumes:
+      - /mnt/data/config/lidarr:/config
+      - /mnt/data/music:/music
+    ports:
+      - "8686:8686"
+
+  prowlarr:
+    image: linuxserver/prowlarr:latest
+    container_name: prowlarr
+    restart: unless-stopped
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Asia/Kolkata
+    volumes:
+      - /mnt/data/config/prowlarr:/config
+    ports:
+      - "9696:9696"
+
   samba:
     image: dperson/samba:latest
     container_name: samba
@@ -111,71 +152,33 @@ services:
       - /mnt/data/samba:/etc/samba
       - /mnt/data:/data
 
-  immich-db:
-    image: postgres:15-alpine
-    container_name: immich-db
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: immich
-      POSTGRES_PASSWORD: ${IMMICH_DB_PASSWORD}
-      POSTGRES_DB: immich
-    volumes:
-      - ./immich-db:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U immich -d immich"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  immich-machine-learning:
-    image: ghcr.io/immich-app/immich-machine-learning:release
-    container_name: immich-ml
-    restart: unless-stopped
-    volumes:
-      - ./immich-ts:/cache
-
-  immich-server:
-    image: ghcr.io/immich-app/immich-server:release
-    container_name: immich-server
-    restart: unless-stopped
-    ports:
-      - "8083:3001"
-    volumes:
-      - ./media/photos:/usr/src/app/upload
-      - /etc/localtime:/etc/localtime:ro
-    environment:
-      - DB_HOSTNAME=immich-db
-      - DB_USERNAME=immich
-      - DB_PASSWORD=${IMMICH_DB_PASSWORD}
-      - DB_DATABASE_NAME=immich
-      - IMMICH_MACHINE_LEARNING_URL=http://immich-machine-learning:3001
-    depends_on:
-      immich-db:
-        condition: service_healthy
-
   tailscale-audio:
     image: tailscale/tailscale:latest
     container_name: tailscale-audio
     restart: unless-stopped
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
     volumes:
-      - /var/lib/tailscale:/var/lib/tailscale
-      - /dev/net/tun:/dev/net/tun
-    cap_add:
-      - NET_ADMIN
-      - SYS_MODULE
+      - tailscale-audio-state:/var/lib/tailscale
     environment:
-      - TS_AUTHKEY=${TS_AUTHKEY}
+      - TS_AUTHKEY=REDACTED
       - TS_STATE_DIR=/var/lib/tailscale
+      - TS_USERSPACE=true
+      - TS_HOSTNAME=tailscale-audio
+      - TS_EXTRA_ARGS=--reset --accept-dns=false
 
   unbound-dns:
-    image: mvance/unbound:latest
+    image: klutchell/unbound:latest
     container_name: unbound-dns
     restart: unless-stopped
     ports:
-      - "5335:53/udp"
-      - "5335:53/tcp"
+      - "53:53/udp"
+      - "53:53/tcp"
     volumes:
-      - /opt/homestack/unbound:/opt/unbound/etc/unbound
+      - /opt/homestack/unbound:/etc/unbound/custom.conf.d
+    environment:
+      - UNBOUND_UID=0
     cap_add:
       - NET_ADMIN
 
@@ -193,40 +196,691 @@ services:
       - /mnt/data/config/beets:/config
       - /mnt/data/music:/music
 
+  radarr:
+    image: linuxserver/radarr:latest
+    container_name: radarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Asia/Kolkata
+    volumes:
+      - /opt/homestack/radarr/config:/config
+      - /mnt/data/movies:/movies
+      - /mnt/data/downloads:/downloads
+    ports:
+      - 7878:7878
+    restart: unless-stopped
+
+  sonarr:
+    image: linuxserver/sonarr:latest
+    container_name: sonarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Asia/Kolkata
+    volumes:
+      - /opt/homestack/sonarr/config:/config
+      - /mnt/data/shows:/tv
+      - /mnt/data/downloads:/downloads
+    ports:
+      - 8989:8989
+    restart: unless-stopped
+
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    container_name: flaresolverr
+    environment:
+      - LOG_LEVEL=info
+      - TZ=Asia/Kolkata
+    ports:
+      - "8191:8191"
+    restart: unless-stopped
+
+  searxng:
+    image: searxng/searxng:latest
+    container_name: searxng
+    volumes:
+      - /opt/homestack/search/searxng:/etc/searxng
+    ports:
+      - "8888:8080" # SearXNG interface available at port 8888
+    environment:
+      - LLM_PROVIDER=gemini # or groq / openrouter
+      - LLM_KEY=CHANGEME
+      - LLM_MODEL=gemini-2.5-flash
+      - LLM_MAX_TOKENS=500
+    restart: unless-stopped
+
+  qbittorrent:
+    container_name: qbittorrent-nox
+    image: qbittorrentofficial/qbittorrent-nox:latest
+    ports:
+      - "8080:8080" # WebUI port
+      - "6881:6881/tcp"
+      - "6881:6881/udp"
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - QBT_EULA=accept
+      - QBT_WEBUI_PORT=8080
+      - TZ=UTC
+    volumes:
+      - /opt/homestack/qbittorrent/config:/config
+      - /mnt/data/downloads:/downloads
+    restart: unless-stopped
+
+  jellyseerr:
+    image: ghcr.io/seerr-team/seerr:latest
+    container_name: jellyseerr
+    user: "0:0"
+    environment:
+      - LOG_LEVEL=debug
+      - TZ=Asia/Kolkata # Use your local timezone
+    ports:
+      - 5055:5055
+    volumes:
+      - /opt/homestack/jellyseerr/config:/app/config
+    restart: unless-stopped
+
+  invidious:
+    image: quay.io/invidious/invidious:latest
+    container_name: invidious
+    restart: unless-stopped
+    ports:
+      - "3015:3000"
+    environment:
+      INVIDIOUS_CONFIG: |
+        db:
+          user: kemal
+          password: CHANGEME
+          host: invidious-db
+          port: 5432
+          dbname: invidious
+        check_tables: true
+        popular_enabled: true
+        registration_enabled: true
+        captcha_enabled: false
+        hmac_key: "AnotherRandomKeyForInvidious1"
+        invidious_companion_key: "HomestackKey1234"
+        invidious_companion:
+          - private_url: http://invidious-companion:8282/companion
+        external_port: 8090
+        https_only: false
+        cors_allowed_origins:
+          - http://192.168.1.90:8090
+          - http://100.90.206.118:8090
+        http_allowed_origins:
+          - http://192.168.1.90:8090
+          - http://100.90.206.118:8090
+    depends_on:
+      invidious-db:
+        condition: service_healthy
+      invidious-companion:
+        condition: service_started
+    networks:
+      - homestack-net
+
+  materialious:
+    image: wardpearce/materialious:1.17.2
+    container_name: materialious
+    restart: unless-stopped
+    environment:
+      VITE_DEFAULT_INVIDIOUS_INSTANCE: "http://192.168.1.90:8090"
+      VITE_DEFAULT_COMPANION_INSTANCE: "http://192.168.1.90:8090/companion"
+    depends_on:
+      - invidious
+    networks:
+      - homestack-net
+
+  invidious-db:
+    image: docker.io/library/postgres:14
+    container_name: invidious-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: invidious
+      POSTGRES_USER: kemal
+      POSTGRES_PASSWORD: CHANGEME
+    volumes:
+      - /opt/homestack/invidious/db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kemal -d invidious"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - homestack-net
+
+  invidious-companion:
+    image: quay.io/invidious/invidious-companion:latest
+    container_name: invidious-companion
+    restart: unless-stopped
+    environment:
+      - SERVER_SECRET_KEY=CHANGEME
+    networks:
+      - homestack-net
+
+  proxy:
+    image: caddy:latest
+    restart: unless-stopped
+    ports:
+      - "8090:80"
+      - "8443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+    networks:
+      - homestack-net
+
   slskd:
     image: slskd/slskd:latest
     container_name: slskd
     restart: unless-stopped
     ports:
       - "5030:5030"
+      - "50300:50300"
     environment:
-      - SLSKD_HTTP_AUTH_METHOD=username-password
-      - SLSKD_HTTP_USERNAME=admin
-      - SLSKD_HTTP_PASSWORD=${SLSKD_HTTP_PASSWORD}
-      - SLSKD_SLSK_USERNAME=MyHomeLabUser2026
-      - SLSKD_SLSK_PASSWORD=${SLSKD_SLSK_PASSWORD}
+      - PUID=1000
+      - PGID=1000
+      - TZ=Asia/Kolkata
       - SLSKD_REMOTE_CONFIGURATION=true
-      - SLSKD_API_KEY=${SLSKD_API_KEY}
+      - SLSKD_SLSK_USERNAME=dualrypt
+      - SLSKD_SLSK_PASSWORD=CHANGEME
+      - SLSKD_USERNAME=${SLSKD_USERNAME}
+      - SLSKD_PASSWORD=CHANGEME
     volumes:
-      - /mnt/data/config/slskd:/app/config
-      - /mnt/data/music/downloads:/downloads
+      - /mnt/data/config/slskd:/app
+      - /mnt/data/music:/app/downloads
+    networks:
+      - homestack-net
 
-  slskd-bot:
-    image: drumsergio/telegram-slskd-local-bot:latest
-    container_name: slskd-bot
+  dab-downloader:
+    image: prathxm/dab-downloader:latest
+    container_name: dab-downloader
+    environment:
+      - PUID=1000
+      - PGID=1000
+    volumes:
+      - /mnt/storage/music:/music
+      - /opt/homestack/dab/config:/config
+    restart: unless-stopped
+
+  vaultwarden:
+    image: vaultwarden/server:latest
+    container_name: vaultwarden
+    restart: unless-stopped
+    ports:
+      - "8085:80"
+      - "3012:3012" # WebSocket port for live sync across apps
+    environment:
+      - WEBSOCKET_ENABLED=true
+      - SIGNUPS_ALLOWED=false
+    volumes:
+      - /opt/homestack/vaultwarden/data:/data
+    networks:
+      - homestack-net
+
+  morphic:
+    image: ghcr.io/miurla/morphic:latest
+    container_name: morphic
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=postgresql://morphic:morphic@morphic-db:5432/morphic?sslmode=disable
+      - DATABASE_SSL_DISABLED=true
+      - SEARCH_API=searxng
+      - ANONYMOUS_USER_ID=anonymous-user
+      - SEARXNG_API_URL=http://searxng:8080
+      - USE_LOCAL_REDIS=true
+      - LOCAL_REDIS_URL=redis://morphic-redis:6379
+      - GROQ_API_KEY=CHANGEME
+      - GOOGLE_GENERATIVE_AI_API_KEY=CHANGEME
+      - ENABLE_AUTH=false
+      - ANONYMOUS_USER_ID=anonymous-user
+      - LANGFUSE_TRACING_ENABLED=false
+    depends_on:
+      - searxng
+      - morphic-redis
+      - morphic-db
+
+  morphic-redis:
+    image: redis:alpine
+    container_name: morphic-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - /opt/homestack/morphic/redis-data:/data
+
+  morphic-db:
+    image: postgres:16-alpine
+    container_name: morphic-db
     restart: unless-stopped
     environment:
-      - DOWNLOAD_DIR=/downloads
-      - OUTPUT_DIR=/music
-      - SLSKD_API_KEY=${SLSKD_API_KEY}
-      - SLSKD_HOST=http://slskd:5030
-      - SPOTIFY_CLIENT_ID=${SPOTIFY_CLIENT_ID}
-      - SPOTIFY_CLIENT_SECRET=${SPOTIFY_CLIENT_SECRET}
-      - TELEGRAM_ALLOWED_USERS=${TELEGRAM_ALLOWED_USERS}
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - POSTGRES_USER=morphic
+      - POSTGRES_PASSWORD=CHANGEME
+      - POSTGRES_DB=morphic
     volumes:
-      - /mnt/data/music/downloads:/downloads
-      - /mnt/data/music/Sorted:/music
-      - /mnt/data/config/slskd-bot:/data
+      - /opt/homestack/morphic/db-data:/var/lib/postgresql/data
+
+  librechat:
+    image: ghcr.io/danny-avila/librechat:v0.8.8-rc1
+    container_name: librechat
+    restart: unless-stopped
+    ports:
+      - "3080:3080"
+    environment:
+      - ALLOW_REGISTRATION=true
+      - HOST=0.0.0.0
+      - PORT=3080
+      - MONGO_URI=mongodb://librechat-mongodb:27017/LibreChat
+      - DOMAIN_CLIENT=http://localhost:3080
+      - DOMAIN_SERVER=http://localhost:3080
+      - CONFIG_PATH=/app/librechat.yaml
+      - CREDS_KEY=CHANGEME
+      - CREDS_IV=e75ed922da7d44fbcc5173afad334d65
+      - JWT_SECRET=CHANGEME
+      - JWT_REFRESH_SECRET=CHANGEME
+      - SEARXNG_INSTANCE_URL=http://searxng:8080
+      - OMNIROUTE_API_KEY=CHANGEME
+      - GITHUB_MCP_TOKEN=CHANGEME
+      - RAG_PORT=8000
+      - RAG_API_URL=http://librechat-rag:8000
+    volumes:
+      - ./librechat/librechat.yaml:/app/librechat.yaml
+      - ./librechat/uploads:/app/uploads
+    user: "1000:1000"
     depends_on:
+      - librechat-mongodb
+      - librechat-rag
+
+  librechat-mongodb:
+    image: mongo:latest
+    container_name: librechat-mongodb
+    restart: unless-stopped
+    volumes:
+      - ./mongo-data:/data/db
+
+  vectordb:
+    image: pgvector/pgvector:pg16
+    container_name: vectordb
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: librechat
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: CHANGEME
+    volumes:
+      - ./pgdata:/var/lib/postgresql/data
+
+  librechat-rag:
+    image: ghcr.io/danny-avila/librechat-rag-api-dev:latest
+    container_name: librechat-rag
+    restart: unless-stopped
+    environment:
+      - RAG_PORT=8000
+      - DB_HOST=vectordb
+      - DB_PORT=5432
+      - POSTGRES_DB=librechat
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=CHANGEME
+      - EMBEDDINGS_PROVIDER=huggingface
+      - EMBEDDINGS_MODEL=sentence-transformers/all-MiniLM-L6-v2
+    depends_on:
+      - vectordb
+
+  firefox-sync:
+    container_name: firefox-sync
+    image: mozilla/syncserver:latest
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      - SYNCSERVER_PUBLIC_URL=http://192.168.1.90:5000
+      - SYNCSERVER_SECRET=CHANGEME
+      - SYNCSERVER_SQLURI=postgres://${DB_USERNAME}:${DB_PASSWORD}@database:5432/syncserver
+      - SYNCSERVER_BATCH_UPLOAD_ENABLED=true
+      - SYNCSERVER_FORCE_WSGI_ENVIRON=true
+      - SYNC_MASTER_SECRET=CHANGEME
+    depends_on:
+      database:
+        condition: service_healthy
+    networks:
+      - homestack-net
+
+  matrix-postgres:
+    image: postgres:16-alpine
+    container_name: matrix-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: synapse
+      POSTGRES_PASSWORD: "REDACTED"
+      POSTGRES_DB: synapse
+      POSTGRES_INITDB_ARGS: "--locale=C --encoding=UTF8"
+    volumes:
+      - /opt/homestack/matrix/postgres-data:/var/lib/postgresql/data
+    networks:
+      - homestack-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U synapse -d synapse"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  matrix-synapse:
+    image: matrixdotorg/synapse:latest
+    container_name: matrix-synapse
+    restart: unless-stopped
+    depends_on:
+      matrix-postgres:
+        condition: service_healthy
+    volumes:
+      - /opt/homestack/matrix/synapse-data:/data
+    ports:
+      - "8008:8008"
+    networks:
+      - homestack-net
+
+  mautrix-whatsapp:
+    image: dock.mau.dev/mautrix/whatsapp:latest
+    container_name: mautrix-whatsapp
+    restart: unless-stopped
+    volumes:
+      - /opt/homestack/mautrix-whatsapp/data:/data
+    networks:
+      - homestack-net
+    depends_on:
+      matrix-postgres:
+        condition: service_healthy
+      matrix-synapse:
+        condition: service_healthy
+
+  omniroute:
+    image: diegosouzapw/omniroute:latest
+    container_name: omniroute
+    restart: unless-stopped
+    stop_grace_period: 40s
+    environment:
+      PORT: 20128
+      HOSTNAME: 0.0.0.0
+      NODE_ENV: production
+      DATA_DIR: /app/data
+      OMNIROUTE_MEMORY_MB: 768
+      NODE_OPTIONS: --max-old-space-size=768
+    volumes:
+      - /mnt/data/omniroute:/app/data
+    ports:
+      - "20128:20128"
+    networks:
+      - default
+
+  github-mcp:
+    image: ghcr.io/github/github-mcp-server:latest
+    container_name: github-mcp
+    restart: unless-stopped
+    environment:
+      GITHUB_PERSONAL_ACCESS_TOKEN: CHANGEME
+      GITHUB_READ_ONLY: "1"
+      GITHUB_TOOLSETS: "context,repos,issues,pull_requests,users"
+    command: ["http"]
+    ports:
+      - "18082:8082"
+    networks:
+      - default
+
+  docker-socket-proxy:
+    image: tecnativa/docker-socket-proxy:latest
+    container_name: docker-socket-proxy
+    restart: unless-stopped
+    environment:
+      CONTAINERS: 1
+      IMAGES: 1
+      INFO: 1
+      VERSION: 1
+      NETWORKS: 1
+      VOLUMES: 1
+      SYSTEM: 1
+      POST: 0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - default
+
+  homelab-mcp:
+    image: python:3.12-slim
+    container_name: homelab-mcp
+    restart: unless-stopped
+    working_dir: /app
+    command:
+      - /bin/sh
+      - -c
+      - pip install --no-cache-dir -r requirements.txt && python server.py
+    environment:
+      DOCKER_HOST: http://docker-socket-proxy:2375
+    volumes:
+      - /opt/homestack/homelab-mcp:/app:ro
+      - /opt/homestack/docker-compose.yml:/config/docker-compose.yml:ro
+      - /opt/homestack/Caddyfile:/config/Caddyfile:ro
+      - /opt/homestack/librechat/librechat.yaml:/config/librechat.yaml:ro
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+    depends_on:
+      - docker-socket-proxy
+    ports:
+      - "18000:8000"
+    networks:
+      - default
+
+  workspace-mcp:
+    image: python:3.12-slim
+    container_name: workspace-mcp
+    restart: unless-stopped
+    working_dir: /app
+    command:
+      - /bin/sh
+      - -c
+      - pip install --no-cache-dir -r requirements.txt && python server.py
+    volumes:
+      - /opt/homestack/workspace-mcp:/app:ro
+      - /opt/devang-ai:/workspace
+    ports:
+      - "18002:8000"
+    networks:
+      - default
+
+  memory-mcp:
+    image: python:3.12-slim
+    container_name: memory-mcp
+    restart: unless-stopped
+    working_dir: /app
+    command:
+      - /bin/sh
+      - -c
+      - pip install --no-cache-dir -r requirements.txt && python server.py
+    volumes:
+      - /opt/homestack/memory-mcp:/app:ro
+      - /opt/devang-ai/memory:/memory
+    ports:
+      - "18003:8000"
+    networks:
+      - default
+
+  jellyfin-mcp:
+    image: python:3.12-slim
+    container_name: jellyfin-mcp
+    restart: unless-stopped
+    working_dir: /app
+    command:
+      - /bin/sh
+      - -c
+      - pip install --no-cache-dir -r requirements.txt && python server.py
+    environment:
+      JELLYFIN_URL: http://jellyfin:8096
+      JELLYFIN_API_KEY: CHANGEME
+      JELLYFIN_USER_ID: ${JELLYFIN_USER_ID}
+    volumes:
+      - /opt/homestack/jellyfin-mcp:/app:ro
+    ports:
+      - "18004:8000"
+    networks:
+      - default
+  searxng-mcp:
+    image: python:3.12-slim
+    container_name: searxng-mcp
+    restart: unless-stopped
+    working_dir: /app
+    command:
+      - /bin/sh
+      - -c
+      - pip install --no-cache-dir -r requirements.txt && python server.py
+    environment:
+      SEARXNG_URL: http://searxng:8080
+    volumes:
+      - /opt/homestack/searxng-mcp:/app:ro
+    ports:
+      - "18005:8000"
+    networks:
+      - default
+  navidrome-mcp:
+    image: python:3.12-slim
+    container_name: navidrome-mcp
+    restart: unless-stopped
+    working_dir: /app
+    command:
+      - /bin/sh
+      - -c
+      - pip install --no-cache-dir -r requirements.txt && python server.py
+    environment:
+      NAVIDROME_URL: http://navidrome:4533
+      NAVIDROME_USERNAME: ${NAVIDROME_USERNAME}
+      NAVIDROME_PASSWORD: CHANGEME
+    volumes:
+      - /opt/homestack/navidrome-mcp:/app:ro
+    ports:
+      - "18006:8000"
+    networks:
+      - homestack-net
+      - default
+  arr-mcp:
+    image: python:3.12-slim
+    container_name: arr-mcp
+    restart: unless-stopped
+    working_dir: /app
+    command:
+      - /bin/sh
+      - -c
+      - pip install --no-cache-dir -r requirements.txt && python server.py
+    environment:
+      RADARR_URL: http://radarr:7878
+      RADARR_API_KEY: CHANGEME
+      SONARR_URL: http://sonarr:8989
+      SONARR_API_KEY: CHANGEME
+      LIDARR_URL: http://lidarr:8686
+      LIDARR_API_KEY: CHANGEME
+      PROWLARR_URL: http://prowlarr:9696
+      PROWLARR_API_KEY: CHANGEME
+    volumes:
+      - /opt/homestack/arr-mcp:/app:ro
+    ports:
+      - "18007:8000"
+    networks:
+      - default
+
+  jellyseerr-mcp:
+    image: python:3.12-slim
+    container_name: jellyseerr-mcp
+    restart: unless-stopped
+    working_dir: /app
+    command:
+      - /bin/sh
+      - -c
+      - pip install --no-cache-dir -r requirements.txt && python server.py
+    environment:
+      JELLYSEERR_URL: http://jellyseerr:5055
+      JELLYSEERR_API_KEY: CHANGEME
+    volumes:
+      - /opt/homestack/jellyseerr-mcp:/app:ro
+    ports:
+      - "18008:8000"
+    networks:
+      - default
+
+  slskd-mcp:
+    image: python:3.12-slim
+    container_name: slskd-mcp
+    restart: unless-stopped
+    working_dir: /app
+    command:
+      - /bin/sh
+      - -c
+      - pip install --no-cache-dir -r requirements.txt && python server.py
+    environment:
+      SLSKD_URL: http://slskd:5030
+      SLSKD_USERNAME: ${SLSKD_USERNAME}
+      SLSKD_PASSWORD: CHANGEME
+    volumes:
+      - /opt/homestack/slskd-mcp:/app:ro
+    ports:
+      - "18009:8000"
+    networks:
+      - default
+
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: open-webui
+    restart: unless-stopped
+    environment:
+      OPENAI_API_BASE_URL: http://peanut:9120/v1
+      OPENAI_API_KEY: CHANGEME
+      ENABLE_OLLAMA_API: "false"
+      WEBUI_AUTH: "true"
+    volumes:
+      - open-webui_data:/app/backend/data
+    ports:
+      - "0.0.0.0:8081:8080"
+    networks:
+      - default
+
+  octorr:
+    build:
+      context: ./octo
+    container_name: octorr
+    restart: unless-stopped
+    ports:
+      - "5274:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      Subsonic__Url: http://navidrome:4533
+      Soulseek__BaseUrl: http://slskd:5030
+      Soulseek__Username: ${SLSKD_USERNAME}
+      Soulseek__Password: CHANGEME
+      Library__DownloadPath: /music
+      YouTube__ShimUrl: http://yt-dlp-shim:8080
+      DOWNLOAD_SOURCE: Soulseek
+      Soulseek__SearchWaitSeconds: 30
+      SLSKD_MIN_FILE_SIZE_BYTES: 5242880
+      SLSKD_PREFERRED_EXTENSION: flac
+      SLSKD_DOWNLOAD_TIMEOUT_SECONDS: 180
+    volumes:
+      - /mnt/data/music:/music
+      - ./octo-config:/app/config
+    depends_on:
+      - navidrome
       - slskd
+      - yt-dlp-shim
+    networks:
+      - homestack-net
+
+  yt-dlp-shim:
+    build:
+      context: ./octo/yt-dlp-shim
+    container_name: yt-dlp-shim
+    restart: unless-stopped
+    volumes:
+      - /mnt/data/music:/music
+    networks:
+      - homestack-net
+
+networks:
+  homestack-net: {}
+
+volumes:
+  model-cache:
+  tailscale-audio-state:
+  open-webui_data:
