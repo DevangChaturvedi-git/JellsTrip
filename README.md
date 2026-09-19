@@ -1,34 +1,98 @@
 # JellsTrip — Self-Hosted Home Infrastructure
 
-A fully self-hosted home server built on a budget desktop PC running Proxmox VE, managing a complete stack of personal cloud services via Docker.
+A fully self-hosted home server built on a budget desktop PC running Proxmox VE, running three LXC containers that together host 55+ Docker services spanning media, AI orchestration, personal cloud, and network infrastructure.
 
 **Host:** `nas` | **Proxmox:** `192.168.1.200:8006` | **Docker LXC:** `192.168.1.90` | **Tailscale:** `100.88.17.70`
 
 ---
 
-## Stack Overview
+## Proxmox Layout
+
+| VMID | Name | Status | Purpose |
+|------|------|--------|---------|
+| 100 | PiHole | Running | Network-wide DNS ad blocking |
+| 101 | docker | Running | Main Docker host — 55+ containers (see below) |
+| 102 | print-server | Stopped | HP printer sharing (CUPS) — currently offline |
+
+*(Correction from earlier docs: DNS ad-blocking runs on **Pi-hole**, not AdGuard Home.)*
+
+---
+
+## Stack Overview (LXC 101 — Docker)
+
+### AI Orchestration — Peanut
+A self-hosted personal AI orchestrator: one conversational entry point with memory, capability routing, and an approval gate for anything that writes/changes/spends, sitting in front of every other service below. Built from scratch — deterministic agent routing, deterministic model routing, a policy engine, an approval engine, and an execution coordinator, all wired to real self-hosted services through the Model Context Protocol (MCP).
 
 | Service | Port | Description |
 |---|---|---|
-| Proxmox VE | 8006 | Bare-metal hypervisor |
-| AdGuard Home | 8080 | Network-wide DNS ad blocking + DHCP |
-| Unbound DNS | 5335 | Recursive DNS resolver (no third-party upstream) |
-| Tailscale | — | Mesh VPN, remote access, CGNAT bypass |
-| Portainer | 9443 | Docker container management UI |
-| Jellyfin | 8096 | Media streaming (movies, shows) |
-| Navidrome (Personal) | 4533 | Music streaming — FLAC collection |
-| Navidrome (Grandpa) | 4534 | Music streaming — family collection |
-| Nicotine+ | 6080 | Soulseek P2P music downloader (noVNC GUI) |
-| Beets | — | Automatic music library tagger |
-| slskd | 5030 | Headless Soulseek engine (REST API) |
-| slskd-bot | — | Telegram bot for music automation |
-| Samba (SMB) | 445 | Private cloud storage (iPhone + MacBook) |
-| Immich | 8083 | Photo management (Apple Photos alternative) |
-| Piped Backend | 8081 | Self-hosted YouTube API backend |
-| Piped Frontend | 3001 | Self-hosted YouTube PWA frontend |
-| Materialious | 3000 | Material Design YouTube frontend |
-| Invidious | 8080 | YouTube data extraction backend |
-| CUPS | 631 | HP Ink Tank 310 network printer sharing |
+| peanut | — | Core orchestrator — routing, reasoning, policy, execution |
+| omniroute | 20128 | Multi-provider LLM gateway/router (Gemini, OpenRouter, OpenCode, and 400+ models) |
+| open-webui | 8081 | Web chat client, phone/browser access to Peanut |
+| librechat + librechat-mongodb + librechat-rag | 3080 | Alternate chat client |
+| morphic + morphic-db + morphic-redis | 3000 | AI-answer search frontend over SearXNG |
+| homelab-mcp | 18000 | MCP server — Docker/host inspection capability |
+| workspace-mcp | 18002 | MCP server — internal file/workspace capability |
+| memory-mcp | 18003 | MCP server — long-term memory store |
+| jellyfin-mcp | 18004 | MCP server — Jellyfin library capability |
+| searxng-mcp | 18005 | MCP server — private web search capability |
+| navidrome-mcp | 18006 | MCP server — music library capability |
+| arr-mcp | 18007 | MCP server — Radarr/Sonarr/Lidarr/Prowlarr capability (read + gated write) |
+| jellyseerr-mcp | 18008 | MCP server — media request capability (read + gated write) |
+| slskd-mcp | 18009 | MCP server — Soulseek search/download capability (read + gated write) |
+| github-mcp | 18082 | MCP server — GitHub repo/code capability |
+| docker-socket-proxy | — | Scoped Docker API access for MCP servers |
+
+### Media Streaming
+| Service | Port | Description |
+|---|---|---|
+| jellyfin | 8096 | Movie/TV streaming |
+| navidrome | 4533 | Music streaming (FLAC library) |
+| immich_server / immich_machine_learning / immich_postgres / immich_redis | 8083 | Self-hosted photo management (Apple Photos alternative) |
+| invidious + invidious-db + invidious-companion | 3015 | Self-hosted YouTube frontend/backend |
+| materialious | — | Material Design YouTube frontend (over Invidious) |
+| monochrome | 5555 | Manga/comic reader |
+
+### Media Acquisition
+| Service | Port | Description |
+|---|---|---|
+| radarr | 7878 | Movie tracking/acquisition |
+| sonarr | 8989 | TV tracking/acquisition |
+| lidarr | 8686 | Music tracking/acquisition |
+| prowlarr | 9696 | Indexer management for the *arr stack |
+| jellyseerr | 5055 | Media request/availability frontend |
+| slskd | 5030 | Headless Soulseek client (REST API) |
+| nicotine-plus | 6080 | Soulseek client (noVNC GUI) |
+| qbittorrent-nox | 8080 / 6881 | Torrent client |
+| beets | — | Automatic music library tagger |
+| octorr | 5274 | *arr stack utility |
+| spotiflac-api / spotiflac-test | 8010 / 5800 | Spotify → FLAC download tooling |
+| yt-dlp-shim | — | Internal yt-dlp API wrapper |
+| dab-downloader | — | Known issue — currently restart-looping |
+| flaresolverr | 8191 | Cloudflare-bypass proxy for indexers |
+
+### Networking & Security
+| Service | Port | Description |
+|---|---|---|
+| unbound-dns | 53 | Recursive DNS resolver |
+| tailscale-audio | — | Mesh VPN container |
+| wg-easy | 51820 / 51821 | WireGuard VPN with web UI |
+| vaultwarden | 3012 / 8085 | Self-hosted password manager (Bitwarden-compatible) |
+| homestack-proxy-1 (Caddy) | 8090 / 8443 | Reverse proxy |
+| portainer | 9000 / 9443 | Docker management UI |
+
+### Communication
+| Service | Port | Description |
+|---|---|---|
+| matrix-synapse + matrix-postgres | 8008 | Self-hosted Matrix chat server |
+| mautrix-whatsapp | — | WhatsApp bridge for Matrix |
+| firefox-sync (syncserver) | 5000 | Self-hosted Firefox Sync |
+| samba | 445 | Private cloud file storage (iPhone + MacBook) |
+
+### Search & Data
+| Service | Port | Description |
+|---|---|---|
+| searxng | 8888 | Privacy-respecting metasearch engine |
+| vectordb (pgvector) | — | Vector database (available for future semantic search/memory upgrades) |
 
 ---
 
@@ -53,50 +117,24 @@ A fully self-hosted home server built on a budget desktop PC running Proxmox VE,
 - 1.5TB HDD mounted at `/mnt/data`
 
 ### Deployment
-
-**1. Clone the repo**
 ```bash
 git clone https://github.com/DevangChaturvedi-git/JellsTrip.git
 cd JellsTrip
-```
-
-**2. Create your .env file**
-```bash
 cp .env.example .env
-nano .env
-```
-Fill in all your credentials and secrets.
-
-**3. Start the stack**
-```bash
+nano .env   # fill in your credentials
 docker compose up -d
 ```
 
 ---
 
-## Environment Variables
-
-All secrets are stored in a `.env` file (not committed to git). Create one based on `.env.example`:
-
-| Variable | Description |
-|---|---|
-| `POSTGRES_PASSWORD_PIPED` | Piped PostgreSQL password |
-| `SAMBA_PASS` | Samba share password |
-| `IMMICH_DB_PASSWORD` | Immich PostgreSQL password |
-| `TS_AUTHKEY` | Tailscale auth key |
-| `SLSKD_HTTP_PASSWORD` | slskd web UI password |
-| `SLSKD_SLSK_PASSWORD` | Soulseek account password |
-| `SLSKD_API_KEY` | slskd REST API key |
-| `SPOTIFY_CLIENT_ID` | Spotify API client ID |
-| `SPOTIFY_CLIENT_SECRET` | Spotify API client secret |
-| `TELEGRAM_BOT_TOKEN` | Telegram bot token |
-| `TELEGRAM_ALLOWED_USERS` | Allowed Telegram user IDs |
+## Remote Access
+All services are accessible remotely via Tailscale at `100.88.17.70:<port>` without any port forwarding on the router.
 
 ---
 
-## Remote Access
-
-All services are accessible remotely via Tailscale at `100.88.17.70:<port>` without any port forwarding on the router.
+## Known Issues
+- `dab-downloader` is currently restart-looping — not yet root-caused.
+- Print server (LXC 102) is currently stopped.
 
 ---
 
