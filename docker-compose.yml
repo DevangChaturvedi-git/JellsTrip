@@ -162,7 +162,7 @@ services:
     volumes:
       - tailscale-audio-state:/var/lib/tailscale
     environment:
-      - TS_AUTHKEY=REDACTED
+      - TS_AUTHKEY=CHANGEME
       - TS_STATE_DIR=/var/lib/tailscale
       - TS_USERSPACE=true
       - TS_HOSTNAME=tailscale-audio
