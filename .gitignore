@@ -17,3 +17,9 @@ unbound/var/
 *.log
 *.db
 *.bak
+immich-db/
+jellyfin-config/
+pgdata/
+mongo-data/
+docker-compose.yml.*
+*.backup*
