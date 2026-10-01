@@ -88,6 +88,14 @@ A self-hosted personal AI orchestrator: one conversational entry point with memo
 | firefox-sync (syncserver) | 5000 | Self-hosted Firefox Sync |
 | samba | 445 | Private cloud file storage (iPhone + MacBook) |
 
+### Productivity & Dev (Google replacement)
+| Service | Port | Description |
+|---|---|---|
+| filebrowser (Quantum) | 8094 | Web file manager over the Samba tree (`/mnt/data`) — search, previews, share links |
+| stirling-pdf | 8097 | PDF toolkit — merge, split, OCR, sign, convert, redact |
+| forgejo | 3030 / 2222 | Self-hosted Git (GitHub mirror target), SSH on 2222 |
+| threadfin | 34400 | IPTV M3U/EPG proxy feeding Jellyfin Live TV |
+
 ### Search & Data
 | Service | Port | Description |
 |---|---|---|

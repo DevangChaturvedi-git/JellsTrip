@@ -877,6 +877,74 @@ services:
     networks:
       - homestack-net
 
+  # ---------- Google-replacement: files, PDF, git, IPTV ----------
+  filebrowser:
+    image: gtstef/filebrowser:stable
+    container_name: filebrowser
+    restart: unless-stopped
+    ports:
+      - "8094:80"
+    environment:
+      - FILEBROWSER_CONFIG=/home/filebrowser/config.yaml
+      - TZ=Asia/Kolkata
+    volumes:
+      - /mnt/data:/srv            # same tree Samba serves
+      - ./filebrowser/config.yaml:/home/filebrowser/config.yaml:ro
+      - /opt/homestack/filebrowser:/home/filebrowser/data
+    networks:
+      - homestack-net
+
+  stirling-pdf:
+    image: stirlingtools/stirling-pdf:latest
+    container_name: stirling-pdf
+    restart: unless-stopped
+    ports:
+      - "8097:8080"
+    environment:
+      - DOCKER_ENABLE_SECURITY=false
+      - LANGS=en_GB
+    volumes:
+      - /opt/homestack/stirling/tessdata:/usr/share/tessdata
+      - /opt/homestack/stirling/configs:/configs
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+    networks:
+      - homestack-net
+
+  forgejo:
+    image: codeberg.org/forgejo/forgejo:15   # LTS — bump major when a new LTS ships
+    container_name: forgejo
+    restart: unless-stopped
+    ports:
+      - "3030:3000"
+      - "2222:22"
+    environment:
+      - USER_UID=1000
+      - USER_GID=1000
+      - FORGEJO__server__SSH_PORT=2222
+      - FORGEJO__service__DISABLE_REGISTRATION=true
+    volumes:
+      - /opt/homestack/forgejo:/data
+      - /etc/localtime:/etc/localtime:ro
+    networks:
+      - homestack-net
+
+  threadfin:
+    image: fyb3roptik/threadfin:latest
+    container_name: threadfin
+    restart: unless-stopped
+    ports:
+      - "34400:34400"
+    environment:
+      - TZ=Asia/Kolkata
+    volumes:
+      - /opt/homestack/threadfin/conf:/home/threadfin/conf
+      - /opt/homestack/threadfin/temp:/tmp/threadfin
+    networks:
+      - homestack-net
+
 networks:
   homestack-net: {}
 
