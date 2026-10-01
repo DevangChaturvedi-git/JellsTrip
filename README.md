@@ -28,7 +28,6 @@ A self-hosted personal AI orchestrator: one conversational entry point with memo
 | peanut | — | Core orchestrator — routing, reasoning, policy, execution |
 | omniroute | 20128 | Multi-provider LLM gateway/router (Gemini, OpenRouter, OpenCode, and 400+ models) |
 | open-webui | 8081 | Web chat client, phone/browser access to Peanut |
-| librechat + librechat-mongodb + librechat-rag | 3080 | Alternate chat client |
 | morphic + morphic-db + morphic-redis | 3000 | AI-answer search frontend over SearXNG |
 | homelab-mcp | 18000 | MCP server — Docker/host inspection capability |
 | workspace-mcp | 18002 | MCP server — internal file/workspace capability |
@@ -61,7 +60,6 @@ A self-hosted personal AI orchestrator: one conversational entry point with memo
 | prowlarr | 9696 | Indexer management for the *arr stack |
 | jellyseerr | 5055 | Media request/availability frontend |
 | slskd | 5030 | Headless Soulseek client (REST API) |
-| nicotine-plus | 6080 | Soulseek client (noVNC GUI) |
 | qbittorrent-nox | 8080 / 6881 | Torrent client |
 | beets | — | Automatic music library tagger |
 | octorr | 5274 | *arr stack utility |

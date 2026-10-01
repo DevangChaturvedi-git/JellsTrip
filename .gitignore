@@ -23,3 +23,8 @@ pgdata/
 mongo-data/
 docker-compose.yml.*
 *.backup*
+forgejo/
+stirling/
+threadfin/
+filebrowser/*
+!filebrowser/config.yaml

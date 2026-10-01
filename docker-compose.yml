@@ -94,21 +94,6 @@ services:
     networks:
       - homestack-net
 
-  music-downloader:
-    image: binhex/arch-nicotineplus:latest
-    container_name: nicotine-plus
-    restart: unless-stopped
-    environment:
-      - PUID=1000
-      - PGID=1000
-      - TZ=Asia/Kolkata
-    volumes:
-      - /mnt/data/config/nicotine:/config
-      - /mnt/data/music:/downloads
-    ports:
-      - "6080:6080"
-      - "2234:2234"
-
   lidarr:
     image: linuxserver/lidarr:latest
     container_name: lidarr
@@ -460,44 +445,6 @@ services:
     volumes:
       - /opt/homestack/morphic/db-data:/var/lib/postgresql/data
 
-  librechat:
-    image: ghcr.io/danny-avila/librechat:v0.8.8-rc1
-    container_name: librechat
-    restart: unless-stopped
-    ports:
-      - "3080:3080"
-    environment:
-      - ALLOW_REGISTRATION=true
-      - HOST=0.0.0.0
-      - PORT=3080
-      - MONGO_URI=mongodb://librechat-mongodb:27017/LibreChat
-      - DOMAIN_CLIENT=http://localhost:3080
-      - DOMAIN_SERVER=http://localhost:3080
-      - CONFIG_PATH=/app/librechat.yaml
-      - CREDS_KEY=CHANGEME
-      - CREDS_IV=e75ed922da7d44fbcc5173afad334d65
-      - JWT_SECRET=CHANGEME
-      - JWT_REFRESH_SECRET=CHANGEME
-      - SEARXNG_INSTANCE_URL=http://searxng:8080
-      - OMNIROUTE_API_KEY=CHANGEME
-      - GITHUB_MCP_TOKEN=CHANGEME
-      - RAG_PORT=8000
-      - RAG_API_URL=http://librechat-rag:8000
-    volumes:
-      - ./librechat/librechat.yaml:/app/librechat.yaml
-      - ./librechat/uploads:/app/uploads
-    user: "1000:1000"
-    depends_on:
-      - librechat-mongodb
-      - librechat-rag
-
-  librechat-mongodb:
-    image: mongo:latest
-    container_name: librechat-mongodb
-    restart: unless-stopped
-    volumes:
-      - ./mongo-data:/data/db
-
   vectordb:
     image: pgvector/pgvector:pg16
     container_name: vectordb
@@ -508,22 +455,6 @@ services:
       POSTGRES_PASSWORD: CHANGEME
     volumes:
       - ./pgdata:/var/lib/postgresql/data
-
-  librechat-rag:
-    image: ghcr.io/danny-avila/librechat-rag-api-dev:latest
-    container_name: librechat-rag
-    restart: unless-stopped
-    environment:
-      - RAG_PORT=8000
-      - DB_HOST=vectordb
-      - DB_PORT=5432
-      - POSTGRES_DB=librechat
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=CHANGEME
-      - EMBEDDINGS_PROVIDER=huggingface
-      - EMBEDDINGS_MODEL=sentence-transformers/all-MiniLM-L6-v2
-    depends_on:
-      - vectordb
 
   firefox-sync:
     container_name: firefox-sync
