@@ -550,7 +550,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: synapse
-      POSTGRES_PASSWORD: "REDACTED"
+      POSTGRES_PASSWORD: "${MATRIX_DB_PASSWORD}"
       POSTGRES_DB: synapse
       POSTGRES_INITDB_ARGS: "--locale=C --encoding=UTF8"
     volumes:

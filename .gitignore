@@ -7,3 +7,13 @@ invidious-config/config.yml
 piped-config/config.properties
 .env
 .backup-*/
+
+# Runtime data — never commit (DBs, logs, PIDs, keys)
+data/
+mnt/
+.opt/
+unbound/*.pid
+unbound/var/
+*.log
+*.db
+*.bak
